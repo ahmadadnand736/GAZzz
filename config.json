@@ -1,0 +1,14 @@
+{
+  "cloudflare": {
+    "api_token": "",
+    "account_id": "",
+    "zone_id": "",
+    "worker_name": "article-generator"
+  },
+  "gemini": {
+    "api_keys": []
+  },
+  "domain": "https://example.com",
+  "site_title": "Investment Blog",
+  "site_description": "Blog investasi dan keuangan terpercaya untuk membantu Anda meraih kebebasan finansial"
+}

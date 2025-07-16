@@ -1,0 +1,19 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "cloudflare>=4.3.1",
+    "frontmatter>=3.0.8",
+    "langcodes>=3.5.0",
+    "langdetect>=1.0.9",
+    "markdown>=3.8.2",
+    "python-crontab>=3.3.0",
+    "python-frontmatter>=1.1.0",
+    "pyyaml>=5.1",
+    "requests>=2.32.4",
+    "schedule>=1.2.2",
+    "slugify>=0.0.1",
+    "streamlit>=1.46.1",
+]

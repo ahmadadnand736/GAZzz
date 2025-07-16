@@ -1,0 +1,6 @@
+{
+  "schedule_hours": [8, 12, 16, 20],
+  "timezone": "Asia/Jakarta",
+  "max_articles_per_run": 3,
+  "enabled": false
+}
