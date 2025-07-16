@@ -117,6 +117,128 @@ def show_api_config():
     # Load current config
     config = load_config()
     
+    # Worker Target Configuration
+    st.subheader("Worker Target Configuration")
+    
+    # Current worker info
+    current_worker = config['cloudflare'].get('worker_name', 'weathered-bonus-2b87')
+    current_url = config['cloudflare'].get('target_url', 'https://weathered-bonus-2b87.ahmadadnand736.workers.dev')
+    
+    st.info(f"Current Target: {current_worker}")
+    st.info(f"Current URL: {current_url}")
+    
+    # Manual worker configuration
+    st.subheader("Manual Worker Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        new_worker_name = st.text_input("Worker Name", value=current_worker)
+    
+    with col2:
+        new_worker_url = st.text_input("Worker URL", value=current_url)
+    
+    if st.button("Update Worker Configuration"):
+        # Update config with new worker info
+        config['cloudflare']['worker_name'] = new_worker_name
+        config['cloudflare']['target_url'] = new_worker_url
+        
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        st.success("Worker configuration updated!")
+        st.rerun()
+    
+    # Test current worker
+    if st.button("Test Current Worker URL"):
+        try:
+            response = requests.get(current_url, timeout=10)
+            if response.status_code == 200:
+                st.success(f"Worker accessible at {current_url}")
+                st.text(f"Response: {response.text[:200]}...")
+            else:
+                st.warning(f"Worker returned status {response.status_code}")
+        except Exception as e:
+            st.error(f"Could not reach worker: {str(e)}")
+    
+    # API Token Instructions
+    st.subheader("API Token Setup")
+    
+    # Check current API status
+    if st.button("Test API Connection"):
+        try:
+            headers = {
+                "Authorization": f"Bearer {config['cloudflare']['api_token']}",
+                "Content-Type": "application/json"
+            }
+            response = requests.get("https://api.cloudflare.com/client/v4/user/tokens/verify", headers=headers)
+            result = response.json()
+            
+            if result.get('success'):
+                st.success("✅ API Token is valid!")
+                st.json(result.get('result', {}))
+            else:
+                st.error("❌ API Token is invalid or has insufficient permissions")
+                st.json(result.get('errors', []))
+        except Exception as e:
+            st.error(f"Connection error: {str(e)}")
+    
+    with st.expander("📋 API Token Setup Instructions"):
+        st.markdown("""
+        **Your current API token needs proper permissions. Follow these steps:**
+        
+        1. **Go to Cloudflare Dashboard**
+           - Visit: https://dash.cloudflare.com/profile/api-tokens
+           - Click "Create Token"
+        
+        2. **Choose Custom Token**
+           - Click "Custom token" → "Get started"
+        
+        3. **Configure Permissions**
+           - **Zone permissions:**
+             - Zone:Zone:Read
+             - Zone:Zone Settings:Read
+           - **Account permissions:**
+             - Account:Cloudflare Workers:Edit
+             - Account:Account Settings:Read
+        
+        4. **Set Resources**
+           - **Account Resources:** Include all accounts
+           - **Zone Resources:** Include all zones
+        
+        5. **Generate Token**
+           - Click "Continue to summary"
+           - Click "Create Token"
+           - **Copy the token immediately**
+        
+        6. **Update Configuration**
+           - Paste the new token in the field below
+           - Click "Simpan Konfigurasi"
+        
+        **Target Worker:** weathered-bonus-2b87
+        **Target URL:** https://weathered-bonus-2b87.ahmadadnand736.workers.dev
+        """)
+    
+    # Deployment status
+    st.subheader("Current Deployment Status")
+    
+    if st.button("Check Worker Status"):
+        try:
+            worker_url = "https://weathered-bonus-2b87.ahmadadnand736.workers.dev"
+            response = requests.get(worker_url, timeout=10)
+            
+            if response.status_code == 200:
+                st.success("✅ Worker is active and responding")
+                st.text("Response preview:")
+                st.code(response.text[:500] + "..." if len(response.text) > 500 else response.text)
+            elif response.status_code == 404:
+                st.warning("⚠️ Worker exists but no content deployed")
+                st.info("You can deploy your article generator to this worker")
+            else:
+                st.error(f"❌ Worker returned status {response.status_code}")
+        except Exception as e:
+            st.error(f"Could not reach worker: {str(e)}")
+    
     # Cloudflare API Configuration
     st.subheader("Cloudflare API")
     

@@ -35,10 +35,14 @@ def deploy_cloudflare_worker():
         response = requests.put(url, headers=headers, data=worker_code)
         
         if response.status_code == 200:
+            # Get the actual deployed URL
+            deployed_url = config.get('target_url', f"https://{config['worker_name']}.{config['account_id']}.workers.dev")
+            
             return {
                 "success": True,
                 "message": "Worker berhasil dideploy!",
-                "url": f"https://{config['worker_name']}.{config['account_id']}.workers.dev",
+                "url": deployed_url,
+                "worker_name": config['worker_name'],
                 "response": response.json()
             }
         else:

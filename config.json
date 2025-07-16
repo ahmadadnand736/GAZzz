@@ -3,9 +3,10 @@
     "api_token": "FdAOb0lSWzYXJV1bw7wu7LzXWALPjSOnbKkT9vKh",
     "account_id": "a418be812e4b0653ca1512804285e4a0",
     "zone_id": "",
-    "worker_name": "article-generator",
+    "worker_name": "weathered-bonus-2b87",
     "selected_domain": "",
-    "deployment_type": "subdomain"
+    "deployment_type": "subdomain",
+    "target_url": "https://weathered-bonus-2b87.ahmadadnand736.workers.dev"
   },
   "gemini": {
     "api_keys": []
