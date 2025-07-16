@@ -1,9 +1,11 @@
 {
   "cloudflare": {
-    "api_token": "",
-    "account_id": "",
+    "api_token": "FdAOb0lSWzYXJV1bw7wu7LzXWALPjSOnbKkT9vKh",
+    "account_id": "a418be812e4b0653ca1512804285e4a0",
     "zone_id": "",
-    "worker_name": "article-generator"
+    "worker_name": "article-generator",
+    "selected_domain": "",
+    "deployment_type": "subdomain"
   },
   "gemini": {
     "api_keys": []

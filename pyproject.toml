@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "blinker==1.6.2",
     "cloudflare>=4.3.1",
     "frontmatter>=3.0.8",
     "langcodes>=3.5.0",

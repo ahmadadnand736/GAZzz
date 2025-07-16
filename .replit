@@ -24,3 +24,7 @@ author = "agent"
 task = "shell.exec"
 args = "streamlit run streamlit_app.py"
 waitForPort = 8501
+
+[[ports]]
+localPort = 8501
+externalPort = 80

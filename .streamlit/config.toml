@@ -1,5 +1,6 @@
 [server]
 headless = true
+fileWatcherType = "none"
 
 [theme]
 primaryColor = "#FF6B6B"

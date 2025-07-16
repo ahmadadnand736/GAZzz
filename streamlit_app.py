@@ -2,14 +2,7 @@ import streamlit as st
 import json
 import os
 import requests
-import schedule
-import time
-import threading
 from datetime import datetime
-from cloudflare_worker import CloudflareWorkerManager
-from article_generator import ArticleGenerator
-from template_manager import TemplateManager
-from cron_scheduler import CronScheduler
 
 # Configure Streamlit page
 st.set_page_config(
@@ -18,21 +11,43 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state
-if 'worker_manager' not in st.session_state:
-    st.session_state.worker_manager = CloudflareWorkerManager()
-if 'article_generator' not in st.session_state:
-    st.session_state.article_generator = ArticleGenerator()
-if 'template_manager' not in st.session_state:
-    st.session_state.template_manager = TemplateManager()
-if 'cron_scheduler' not in st.session_state:
-    st.session_state.cron_scheduler = CronScheduler()
+# Load configuration
+@st.cache_data
+def load_config():
+    try:
+        with open('config.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "cloudflare": {
+                "api_token": "FdAOb0lSWzYXJV1bw7wu7LzXWALPjSOnbKkT9vKh",
+                "account_id": "a418be812e4b0653ca1512804285e4a0",
+                "zone_id": "",
+                "worker_name": "article-generator"
+            },
+            "gemini": {"api_keys": []}
+        }
+
+# Test Cloudflare connection
+def test_cloudflare_connection():
+    config = load_config()
+    headers = {
+        "Authorization": f"Bearer {config['cloudflare']['api_token']}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.get("https://api.cloudflare.com/client/v4/user/tokens/verify", headers=headers)
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 def main():
     st.title("🚀 Cloudflare Worker Article Generator")
-    st.sidebar.title("Navigasi")
+    st.write("Aplikasi untuk auto-generate artikel SEO dengan Cloudflare Worker")
     
     # Sidebar navigation
+    st.sidebar.title("Navigasi")
     page = st.sidebar.selectbox(
         "Pilih Halaman",
         ["Dashboard", "Konfigurasi API", "Template Management", "Scheduler", "Generate Manual", "Deploy Worker"]
@@ -54,31 +69,53 @@ def main():
 def show_dashboard():
     st.header("Dashboard")
     
+    # Test Cloudflare connection
+    cf_status = test_cloudflare_connection()
+    
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Total Artikel", "0", "0")
+        # Count articles in _posts folder
+        article_count = 0
+        if os.path.exists('_posts'):
+            article_count = len([f for f in os.listdir('_posts') if f.endswith('.md')])
+        st.metric("Total Artikel", str(article_count))
     
     with col2:
-        st.metric("Worker Status", "Inactive", "")
+        if "success" in cf_status and cf_status["success"]:
+            st.metric("Cloudflare Status", "✅ Connected")
+        else:
+            st.metric("Cloudflare Status", "❌ Error")
     
     with col3:
-        st.metric("Scheduler Status", "Stopped", "")
+        st.metric("Worker Status", "Ready to Deploy")
+    
+    st.subheader("Cloudflare Connection Test")
+    
+    if st.button("Test Connection"):
+        with st.spinner("Testing Cloudflare connection..."):
+            result = test_cloudflare_connection()
+            st.json(result)
     
     st.subheader("Aktivitas Terbaru")
     
-    # Log aktivitas
-    if 'activity_log' not in st.session_state:
-        st.session_state.activity_log = []
-    
-    if st.session_state.activity_log:
-        for log in st.session_state.activity_log[-10:]:  # Show last 10 activities
-            st.text(f"{log['timestamp']}: {log['message']}")
+    # Show recent files
+    if os.path.exists('_posts'):
+        posts = os.listdir('_posts')
+        if posts:
+            st.write("Generated Articles:")
+            for post in sorted(posts)[-5:]:  # Show last 5 posts
+                st.text(f"📄 {post}")
+        else:
+            st.info("Belum ada artikel yang di-generate")
     else:
         st.info("Belum ada aktivitas")
 
 def show_api_config():
     st.header("Konfigurasi API")
+    
+    # Load current config
+    config = load_config()
     
     # Cloudflare API Configuration
     st.subheader("Cloudflare API")
@@ -86,34 +123,109 @@ def show_api_config():
     col1, col2 = st.columns(2)
     
     with col1:
-        cf_api_token = st.text_input("Cloudflare API Token", type="password")
-        cf_account_id = st.text_input("Account ID")
+        cf_api_token = st.text_input("Cloudflare API Token", 
+                                   value=config['cloudflare']['api_token'], 
+                                   type="password")
+        cf_account_id = st.text_input("Account ID", 
+                                    value=config['cloudflare']['account_id'])
     
     with col2:
-        cf_zone_id = st.text_input("Zone ID") 
-        cf_worker_name = st.text_input("Worker Name", value="article-generator")
+        cf_zone_id = st.text_input("Zone ID", 
+                                 value=config['cloudflare'].get('zone_id', '')) 
+        cf_worker_name = st.text_input("Worker Name", 
+                                     value=config['cloudflare'].get('worker_name', 'article-generator'))
+    
+    # Domain Selection
+    st.subheader("Domain Configuration")
+    
+    # Get available domains
+    from cloudflare_domains import CloudflareDomainManager
+    domain_manager = CloudflareDomainManager()
+    
+    if st.button("Load Domains from Cloudflare"):
+        with st.spinner("Loading domains..."):
+            zones_result = domain_manager.get_zones()
+            
+            if zones_result['success']:
+                st.session_state.available_domains = zones_result['zones']
+                st.success(f"Loaded {len(zones_result['zones'])} domains")
+            else:
+                st.error(f"Failed to load domains: {zones_result['error']}")
+    
+    # Domain selection
+    if 'available_domains' in st.session_state:
+        st.subheader("Select Domain for Deployment")
+        
+        deployment_type = st.radio(
+            "Deployment Type",
+            ["subdomain", "custom_domain"],
+            index=0 if config['cloudflare'].get('deployment_type') == 'subdomain' else 1,
+            format_func=lambda x: "Workers.dev Subdomain" if x == "subdomain" else "Custom Domain"
+        )
+        
+        if deployment_type == "subdomain":
+            st.info(f"Worker akan di-deploy ke: https://{cf_worker_name}.{cf_account_id}.workers.dev")
+            selected_domain = ""
+            selected_zone_id = ""
+        else:
+            # Show available domains
+            domain_options = [""] + [f"{domain['name']} ({domain['status']})" for domain in st.session_state.available_domains]
+            selected_domain_display = st.selectbox("Select Domain", domain_options)
+            
+            if selected_domain_display:
+                # Find selected domain info
+                domain_name = selected_domain_display.split(' (')[0]
+                selected_domain_info = next((d for d in st.session_state.available_domains if d['name'] == domain_name), None)
+                
+                if selected_domain_info:
+                    selected_domain = selected_domain_info['name']
+                    selected_zone_id = selected_domain_info['id']
+                    st.info(f"Worker akan di-deploy ke: https://{selected_domain}")
+                    st.json({
+                        "Domain": selected_domain_info['name'],
+                        "Status": selected_domain_info['status'],
+                        "Plan": selected_domain_info['plan']
+                    })
+                else:
+                    selected_domain = ""
+                    selected_zone_id = ""
+            else:
+                selected_domain = ""
+                selected_zone_id = ""
+        
+        # Save domain config
+        if st.button("Save Domain Configuration"):
+            domain_manager.save_domain_config(selected_domain, deployment_type, selected_zone_id)
+            st.success("Domain configuration saved!")
     
     # Google Gemini API Configuration
     st.subheader("Google Gemini API")
-    gemini_api_keys = st.text_area("API Keys (satu per baris)")
+    gemini_api_keys = st.text_area("API Keys (satu per baris)", 
+                                  value='\n'.join(config['gemini']['api_keys']))
     
     if st.button("Simpan Konfigurasi"):
-        config = {
+        new_config = {
             "cloudflare": {
                 "api_token": cf_api_token,
                 "account_id": cf_account_id,
                 "zone_id": cf_zone_id,
-                "worker_name": cf_worker_name
+                "worker_name": cf_worker_name,
+                "selected_domain": config['cloudflare'].get('selected_domain', ''),
+                "deployment_type": config['cloudflare'].get('deployment_type', 'subdomain')
             },
             "gemini": {
                 "api_keys": gemini_api_keys.split('\n') if gemini_api_keys else []
-            }
+            },
+            "domain": config.get('domain', 'https://example.com'),
+            "site_title": config.get('site_title', 'Investment Blog'),
+            "site_description": config.get('site_description', 'Blog investasi dan keuangan terpercaya')
         }
         
         with open('config.json', 'w') as f:
-            json.dump(config, f, indent=2)
+            json.dump(new_config, f, indent=2)
         
         st.success("Konfigurasi berhasil disimpan!")
+        st.rerun()
 
 def show_template_management():
     st.header("Template Management")
@@ -268,21 +380,75 @@ def show_manual_generation():
 def show_deploy_worker():
     st.header("Deploy ke Cloudflare Worker")
     
-    # Worker code preview
-    st.subheader("Worker Code Preview")
+    # Import the deployment functions
+    from cloudflare_deploy import deploy_cloudflare_worker, get_worker_status
+    from cloudflare_domains import CloudflareDomainManager
     
-    worker_code = st.session_state.worker_manager.generate_worker_code()
-    st.code(worker_code, language='javascript')
+    # Load current config
+    config = load_config()
+    domain_manager = CloudflareDomainManager()
+    deployment_info = domain_manager.get_current_deployment_info()
+    
+    # Show current deployment configuration
+    st.subheader("Current Deployment Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.info(f"**Deployment Type:** {deployment_info['deployment_type'].title()}")
+        st.info(f"**Worker Name:** {deployment_info['worker_name']}")
+    
+    with col2:
+        if deployment_info['deployment_type'] == 'custom_domain':
+            st.info(f"**Domain:** {deployment_info['selected_domain']}")
+        st.info(f"**Target URL:** {deployment_info['url']}")
+    
+    # Check current worker status
+    st.subheader("Worker Status")
+    
+    if st.button("Check Status"):
+        with st.spinner("Checking worker status..."):
+            status = get_worker_status()
+            st.json(status)
     
     # Deploy button
-    if st.button("Deploy Worker"):
+    st.subheader("Deploy Worker")
+    
+    if st.button("Deploy Worker", type="primary"):
         try:
             with st.spinner("Deploying worker..."):
-                result = st.session_state.worker_manager.deploy_worker()
+                # First deploy the worker script
+                result = deploy_cloudflare_worker()
+                
                 if result['success']:
-                    st.success(f"Worker berhasil dideploy! URL: {result['url']}")
+                    st.success(f"✅ Worker script deployed successfully!")
+                    
+                    # If custom domain is selected, create route
+                    if deployment_info['deployment_type'] == 'custom_domain' and deployment_info['selected_domain']:
+                        with st.spinner("Setting up custom domain route..."):
+                            zone_id = config['cloudflare']['zone_id']
+                            domain_info = {
+                                'id': zone_id,
+                                'name': deployment_info['selected_domain']
+                            }
+                            
+                            domain_result = domain_manager.deploy_to_domain(domain_info, 'custom_domain')
+                            
+                            if domain_result['success']:
+                                st.success(f"✅ Custom domain route created!")
+                                st.info(f"🌐 Worker available at: {domain_result['url']}")
+                                st.json(domain_result.get('route', {}))
+                            else:
+                                st.error(f"❌ Custom domain setup failed: {domain_result['error']}")
+                                st.info(f"Worker still available at subdomain: {result['url']}")
+                    else:
+                        st.info(f"🌐 Worker available at: {result['url']}")
+                    
+                    st.json(result.get('response', {}))
                 else:
-                    st.error(f"Deployment gagal: {result['error']}")
+                    st.error(f"❌ {result['message']}")
+                    if 'status_code' in result:
+                        st.error(f"Status Code: {result['status_code']}")
         except Exception as e:
             st.error(f"Error deploying worker: {str(e)}")
     
@@ -293,15 +459,55 @@ def show_deploy_worker():
     
     with col1:
         if st.button("Update Worker"):
-            st.info("Updating worker...")
+            with st.spinner("Updating worker..."):
+                result = deploy_cloudflare_worker()
+                if result['success']:
+                    st.success("Worker berhasil diupdate!")
+                else:
+                    st.error("Update gagal!")
     
     with col2:
-        if st.button("Delete Worker"):
-            st.warning("Worker akan dihapus!")
+        if st.button("Test Worker"):
+            st.info("Testing worker...")
+            try:
+                import requests
+                test_url = deployment_info['url']
+                response = requests.get(test_url, timeout=10)
+                if response.status_code == 200:
+                    st.success("✅ Worker berjalan dengan baik!")
+                    st.text(f"Response length: {len(response.text)} characters")
+                else:
+                    st.error(f"❌ Worker error: {response.status_code}")
+            except Exception as e:
+                st.error(f"Test error: {str(e)}")
     
     with col3:
-        if st.button("View Logs"):
-            st.info("Menampilkan logs...")
+        if st.button("View Worker"):
+            st.info("Opening worker URL...")
+            st.markdown(f"[Open Worker]({deployment_info['url']})")
+    
+    # Domain Routes Management (for custom domains)
+    if deployment_info['deployment_type'] == 'custom_domain' and deployment_info['selected_domain']:
+        st.subheader("Domain Routes Management")
+        
+        zone_id = config['cloudflare']['zone_id']
+        
+        if st.button("View Current Routes"):
+            with st.spinner("Loading routes..."):
+                routes_result = domain_manager.get_worker_routes(zone_id)
+                
+                if routes_result['success']:
+                    st.json(routes_result['routes'])
+                else:
+                    st.error(f"Failed to load routes: {routes_result['error']}")
+    
+    # Worker code preview
+    st.subheader("Worker Code Preview")
+    
+    with st.expander("View Generated Worker Code"):
+        from cloudflare_deploy import generate_worker_code
+        worker_code = generate_worker_code()
+        st.code(worker_code[:2000] + "..." if len(worker_code) > 2000 else worker_code, language='javascript')
 
 if __name__ == "__main__":
     main()
